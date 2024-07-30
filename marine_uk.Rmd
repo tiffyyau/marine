@@ -1,0 +1,161 @@
+---
+title: "marine_uk"
+output: html_document
+date: "2024-07-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+#Install packages
+```{r}
+install.packages('tidyverse')
+library(tidyverse)
+
+install.packages('dplyr')
+library(dplyr)
+
+install.packages('naniar')
+library(naniar)
+
+install.packages('tidyr')
+library(tidyr)
+
+install.packages('stringr')
+library(stringr)
+```
+
+
+
+# Import Tidal and Wave data together, then merge with Energy Prices
+```{r}
+RUK_tidal_merged <- read_csv("~/Desktop/wave and tidal data/RUK tidal merged.csv")
+
+RUK_wave_merged <- read_csv("~/Desktop/wave and tidal data/RUK wave merged.csv")
+
+```
+
+# Check and clean NA values
+```{r}
+# TIDAL
+is.na(RUK_tidal_merged)
+
+pct_complete(RUK_tidal_merged) #this is from the naniar package   # 5.323383 of this data is complete
+
+tidal_projects <- pull(RUK_tidal_merged, Project)
+# drop_na(tidal_projects) did not work #filter(tidal_projects, Project==NA) did not work either
+tidal_cleaned <- RUK_tidal_merged %>% 
+                 drop_na(Project)
+View(tidal_cleaned)
+
+# WAVE
+
+pct_complete(RUK_wave_merged) # 2.00789 of this data is complete
+
+wave_projects <- pull(RUK_wave_merged, Project)
+
+wave_cleaned <- RUK_wave_merged %>% 
+                 drop_na(Project)
+View(wave_cleaned)
+
+```
+
+# Merge 2 files
+```{r}
+mergedRUKmarine <- full_join(tidal_cleaned, wave_cleaned)
+View(mergedRUKmarine)
+```
+
+
+# Upload with Energy Pricing data (separately)
+```{r}
+electricity_prices <- read_csv("~/Desktop/wave and tidal data/electricity pricing/electricity_prices.csv")
+
+```
+
+# Clean Energy pricing data to 1) remove NA rows
+```{r}
+electricity_price_clean <- pull(electricity_prices, year)
+
+electricity_price_clean <- electricity_prices %>% 
+                 drop_na(year)
+View(electricity_price_clean)
+```
+
+# 2) remove NA columns
+Note, besides what is listed (dplyr), can also use the janitor package with the following code
+data_frame <- data_frame %>%
+  remove_empty("cols")
+  
+```{r}
+electricity_price_clean <- electricity_price_clean %>%
+  select_if(~ !all(is.na(.)))
+
+View(electricity_price_clean)
+```
+
+# 3) Rename [x] values to be actually NA
+
+```{r}
+
+library(naniar)
+test <- replace_with_na_all(data = electricity_price_clean,
+                    condition = ~.x == "[x]")
+View(test)
+electricity_price_clean <- test
+View(electricity_price_clean)
+```
+
+# Merge RUK data with electricity price data
+
+# 1) first extract years specifically from the column is Date_Generator -- this is in dd/mm/yyyy format
+# Create a new column for year only
+```{r}
+# First check the class of the variable
+glimpse(mergedRUKmarine)
+#Date_Generator is a character column
+
+library(lubridate)
+
+mergedRUKmarine <- mergedRUKmarine %>%
+  mutate(
+    Date_Generator = dmy(Date_Generator),  # Convert to Date type
+    year_only = year(Date_Generator)    # Extract the year; #year_only is the name of the new column
+  )
+View(mergedRUKmarine)
+```
+
+# 2) Merge electricity price data to match the year_only column
+```{r}
+merged_electric <- mergedRUKmarine %>%
+  left_join(electricity_price_clean, by = c("year_only"="year"))
+         
+View(merged_electric) 
+``` 
+
+
+# Create descriptive stats summary
+```{r}
+summary(merged_electric)
+```
+ 
+# analyze by wave vs. tidal technology (Technology_Generator)
+```{r}
+tech_grouped <- merged_electric %>% group_by(Technology_Generator)
+
+```
+ 
+
+
+
+# analyze by country
+
+```{r}
+merged_electric_grouped <- merged_electric %>% group_by("Country_Generator")
+
+merged_electric_grouped %>% 
+  summarize(avg_price= mean(electricty_fuel_price_industry, na.rm = TRUE))
+```
